@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
 import { 
-  CalendarClock, 
-  User, 
-  Package, 
-  Truck, 
-  BookOpen, 
-  Users, 
+  CalendarIcon as CalendarClock, 
+  UserIcon as User, 
+  CubeIcon as Package, 
+  TruckIcon as Truck, 
+  BookOpenIcon as BookOpen, 
+  UsersIcon as Users, 
   BanknotesIcon as Banknotes, 
   Cog6ToothIcon as Cog,
   ChevronRightIcon as ChevronRight,

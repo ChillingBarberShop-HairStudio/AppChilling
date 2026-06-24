@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { PlusIcon, TrashIcon, PencilIcon, UserIcon } from '@heroicons/vue/24/outline'
 
 interface Product {
   id: number
