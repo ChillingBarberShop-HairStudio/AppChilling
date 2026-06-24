@@ -1,0 +1,1 @@
+Đặt Logo.PNG vào public/Logo.PNG trong project thật.

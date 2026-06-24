@@ -1,0 +1,1 @@
+Đặt panel.PNG vào public/panel.PNG trong project thật.

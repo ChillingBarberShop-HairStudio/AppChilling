@@ -1,0 +1,43 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-background text-barber-navy antialiased;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+}
+
+@layer utilities {
+  .barber-pole-fallback {
+    background:
+      repeating-linear-gradient(
+        135deg,
+        #ef4444 0 12px,
+        #ffffff 12px 24px,
+        #1687ff 24px 36px,
+        #ffffff 36px 48px
+      );
+    animation: barberPoleSlide 1.6s linear infinite;
+  }
+
+  @keyframes barberPoleSlide {
+    from { background-position: 0 0; }
+    to { background-position: 48px 48px; }
+  }
+
+  .barber-pole-texture {
+    background-image:
+      linear-gradient(120deg, rgba(17,24,39,.70), rgba(17,24,39,.20)),
+      url('/Ani.PNG');
+    background-size: cover;
+    background-position: center;
+    animation: poleFloat 5s ease-in-out infinite;
+  }
+
+  @keyframes poleFloat {
+    0%, 100% { background-position: center 0; }
+    50% { background-position: center 10%; }
+  }
+}
