@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { PlusIcon, TrashIcon, PencilIcon, UserIcon } from '@heroicons/vue/24/outline'
+import { supabase } from '../lib/supabase'
 
 interface Staff {
-  id: number
+  id: string
   name: string
   position: string
   phone: string
@@ -11,17 +12,13 @@ interface Staff {
   custom_fields: Array<{key: string, value: string}>
 }
 
-// MOCK DATA cho Supabase sau này
-const staffList = ref<Staff[]>([
-  { id: 1, name: 'Nguyễn Văn Quản', position: 'Quản lý', phone: '0901234567', avatar: '', custom_fields: [{key: 'Kinh nghiệm', value: '5 năm'}] },
-  { id: 2, name: 'Trần Thợ Chính', position: 'Thợ chính', phone: '0987654321', avatar: '', custom_fields: [{key: 'Sở trường', value: 'Cắt tóc nam'}] },
-])
+const staffList = ref<Staff[]>([])
 const loading = ref(false)
 
 // Modal state
 const showModal = ref(false)
 const isEdit = ref(false)
-const currentId = ref<number | null>(null)
+const currentId = ref<string | null>(null)
 
 // Form state
 const formData = ref({
@@ -34,6 +31,17 @@ const formData = ref({
 
 // Preview URL for avatar
 const avatarPreview = ref('')
+
+const fetchStaff = async () => {
+  loading.value = true
+  const { data } = await supabase.from('staff').select('*').order('created_at', { ascending: false })
+  if (data) staffList.value = data
+  loading.value = false
+}
+
+onMounted(() => {
+  fetchStaff()
+})
 
 const handleFileChange = (e: Event) => {
   const target = e.target as HTMLInputElement
@@ -75,43 +83,45 @@ const openEditModal = (staff: Staff) => {
 
 const saveStaff = async () => {
   try {
+    const payload = {
+      name: formData.value.name,
+      position: formData.value.position,
+      phone: formData.value.phone,
+      custom_fields: formData.value.custom_fields,
+      avatar: avatarPreview.value
+    }
+    
     if (isEdit.value && currentId.value) {
-      // Mock update
+      const { error } = await supabase.from('staff').update(payload).eq('id', currentId.value)
+      if (error) throw error
+      
       const index = staffList.value.findIndex(s => s.id === currentId.value)
       if (index !== -1) {
-        staffList.value[index] = {
-          ...staffList.value[index],
-          name: formData.value.name,
-          position: formData.value.position,
-          phone: formData.value.phone,
-          custom_fields: [...formData.value.custom_fields],
-          avatar: avatarPreview.value
-        }
+        staffList.value[index] = { ...staffList.value[index], ...payload }
       }
     } else {
-      // Mock insert
-      staffList.value.push({
-        id: Date.now(),
-        name: formData.value.name,
-        position: formData.value.position,
-        phone: formData.value.phone,
-        custom_fields: [...formData.value.custom_fields],
-        avatar: avatarPreview.value
-      })
+      const { data, error } = await supabase.from('staff').insert([payload]).select()
+      if (error) throw error
+      if (data) {
+        staffList.value.unshift(data[0])
+      }
     }
     showModal.value = false
-  } catch (error) {
+  } catch (error: any) {
     console.error('Lỗi lưu nhân viên', error)
-    alert('Có lỗi xảy ra, vui lòng thử lại!')
+    alert('Có lỗi xảy ra: ' + error.message)
   }
 }
 
-const deleteStaff = async (id: number) => {
+const deleteStaff = async (id: string) => {
   if (confirm('Bạn có chắc chắn muốn xoá nhân viên này?')) {
     try {
+      const { error } = await supabase.from('staff').delete().eq('id', id)
+      if (error) throw error
       staffList.value = staffList.value.filter(s => s.id !== id)
-    } catch (error) {
+    } catch (error: any) {
       console.error('Lỗi xoá nhân viên', error)
+      alert('Lỗi xoá nhân viên: ' + error.message)
     }
   }
 }

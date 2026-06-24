@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
+import { supabase } from '../lib/supabase'
 
 interface Product {
-  id: number
+  id: string
   name: string
   quantity: number
   price: number
@@ -10,24 +11,35 @@ interface Product {
 }
 
 interface Log {
-  id: number
-  product_id: number
+  id: string
+  product_id: string
   product_name: string
-  type: 'import' | 'export'
+  log_type: 'import' | 'export'
   quantity: number
   date: string
   note: string
 }
 
-// MOCK DATA
-const products = ref<Product[]>([
-  { id: 1, name: 'Sáp vuốt tóc Volcanic', quantity: 15, price: 250000, group_name: 'Sản phẩm tạo kiểu' },
-  { id: 2, name: 'Gôm xịt tóc Butterfly', quantity: 3, price: 120000, group_name: 'Sản phẩm tạo kiểu' },
-])
-const logs = ref<Log[]>([
-  { id: 1, product_id: 1, product_name: 'Sáp vuốt tóc Volcanic', type: 'import', quantity: 20, date: new Date().toISOString(), note: 'Nhập đầu tháng' }
-])
+const products = ref<Product[]>([])
+const logs = ref<Log[]>([])
 const loading = ref(false)
+
+const fetchInventory = async () => {
+  loading.value = true
+  const { data } = await supabase.from('inventory_products').select('*').order('created_at', { ascending: false })
+  if (data) products.value = data
+  loading.value = false
+}
+
+const fetchLogs = async () => {
+  const { data } = await supabase.from('inventory_logs').select('*').order('date', { ascending: false })
+  if (data) logs.value = data
+}
+
+onMounted(() => {
+  fetchInventory()
+  fetchLogs()
+})
 
 // Tabs: 0: Sẵn có, 1: Nhập kho, 2: Xuất kho, 3: Lịch sử
 const activeTab = ref(0)
@@ -51,17 +63,48 @@ const submitImport = async () => {
   if (!importForm.value.name) return alert('Vui lòng nhập tên sản phẩm')
   try {
     let existing = products.value.find(p => p.name === importForm.value.name)
+    let productId = ''
+    
     if (existing) {
-      existing.quantity += importForm.value.quantity
+      // Update quantity
+      const newQty = existing.quantity + importForm.value.quantity
+      const { error } = await supabase.from('inventory_products').update({ quantity: newQty, price: importForm.value.price }).eq('id', existing.id)
+      if (error) throw error
+      existing.quantity = newQty
+      existing.price = importForm.value.price
+      productId = existing.id
     } else {
-      products.value.push({ id: Date.now(), name: importForm.value.name, quantity: importForm.value.quantity, price: importForm.value.price, group_name: 'Mới' })
+      // Insert new
+      const { data, error } = await supabase.from('inventory_products').insert([{
+        name: importForm.value.name,
+        quantity: importForm.value.quantity,
+        price: importForm.value.price,
+        group_name: 'Mới'
+      }]).select()
+      if (error) throw error
+      if (data) {
+        products.value.unshift(data[0])
+        productId = data[0].id
+      }
     }
-    logs.value.unshift({ id: Date.now(), product_id: existing?.id || Date.now(), product_name: importForm.value.name, type: 'import', quantity: importForm.value.quantity, date: new Date().toISOString(), note: '' })
+    
+    // Create log
+    const { data: logData, error: logError } = await supabase.from('inventory_logs').insert([{
+      product_id: productId,
+      product_name: importForm.value.name,
+      log_type: 'import',
+      quantity: importForm.value.quantity,
+      note: ''
+    }]).select()
+    
+    if (logError) throw logError
+    if (logData) logs.value.unshift(logData[0])
+    
     alert('Đã nhập kho thành công!')
     importForm.value = { name: '', quantity: 1, price: 0 }
     activeTab.value = 0
-  } catch (err) {
-    alert('Lỗi nhập kho')
+  } catch (err: any) {
+    alert('Lỗi nhập kho: ' + err.message)
   }
 }
 
@@ -70,18 +113,32 @@ const exportForm = ref({ product_id: '', quantity: 1 })
 const submitExport = async () => {
   if (!exportForm.value.product_id) return alert('Vui lòng chọn sản phẩm')
   try {
-    let p = products.value.find(p => p.id === parseInt(exportForm.value.product_id))
+    let p = products.value.find(p => p.id === exportForm.value.product_id)
     if (!p) return alert('Không tìm thấy sản phẩm')
     if (p.quantity < exportForm.value.quantity) return alert('Số lượng tồn không đủ')
     
-    p.quantity -= exportForm.value.quantity
-    logs.value.unshift({ id: Date.now(), product_id: p.id, product_name: p.name, type: 'export', quantity: exportForm.value.quantity, date: new Date().toISOString(), note: '' })
+    const newQty = p.quantity - exportForm.value.quantity
+    const { error } = await supabase.from('inventory_products').update({ quantity: newQty }).eq('id', p.id)
+    if (error) throw error
+    p.quantity = newQty
+    
+    // Create log
+    const { data: logData, error: logError } = await supabase.from('inventory_logs').insert([{
+      product_id: p.id,
+      product_name: p.name,
+      log_type: 'export',
+      quantity: exportForm.value.quantity,
+      note: ''
+    }]).select()
+    
+    if (logError) throw logError
+    if (logData) logs.value.unshift(logData[0])
     
     alert('Đã xuất kho thành công!')
     exportForm.value = { product_id: '', quantity: 1 }
     activeTab.value = 0
   } catch (err: any) {
-    alert('Lỗi xuất kho')
+    alert('Lỗi xuất kho: ' + err.message)
   }
 }
 
@@ -224,12 +281,12 @@ const formatDate = (isoString: string) => {
               <td class="py-3 px-4 text-gray-500 text-sm">{{ formatDate(log.date) }}</td>
               <td class="py-3 px-4 text-gray-800 font-medium">{{ log.product_name || 'SP đã xoá' }}</td>
               <td class="py-3 px-4">
-                <span :class="log.type === 'import' ? 'text-primary-blue bg-blue-50 px-2 py-1 rounded text-xs font-medium' : 'text-danger bg-red-50 px-2 py-1 rounded text-xs font-medium'">
-                  {{ log.type === 'import' ? 'Nhập kho' : 'Xuất kho' }}
+                <span :class="log.log_type === 'import' ? 'text-primary-blue bg-blue-50 px-2 py-1 rounded text-xs font-medium' : 'text-danger bg-red-50 px-2 py-1 rounded text-xs font-medium'">
+                  {{ log.log_type === 'import' ? 'Nhập kho' : 'Xuất kho' }}
                 </span>
               </td>
-              <td class="py-3 px-4 text-right font-medium" :class="log.type === 'import' ? 'text-primary-blue' : 'text-danger'">
-                {{ log.type === 'import' ? '+' : '-' }}{{ log.quantity }}
+              <td class="py-3 px-4 text-right font-medium" :class="log.log_type === 'import' ? 'text-primary-blue' : 'text-danger'">
+                {{ log.log_type === 'import' ? '+' : '-' }}{{ log.quantity }}
               </td>
             </tr>
             <tr v-if="logs.length === 0">

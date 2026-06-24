@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { LockClosedIcon, PlusIcon, FunnelIcon } from '@heroicons/vue/24/outline'
+import { supabase } from '../lib/supabase'
 
 interface Customer {
   id: string
+  customer_code: string
   name: string
   phone: string
   dob: string
@@ -11,18 +13,12 @@ interface Customer {
   created_at: string
 }
 
-// MOCK DATA cho Supabase sau này
-const customers = ref<Customer[]>([
-  { id: 'KH001', name: 'Nguyễn Văn A', phone: '0987654321', dob: '01/01/1990', visits: 10, created_at: new Date().toISOString() },
-  { id: 'KH002', name: 'Trần Thị B', phone: '0912345678', dob: '15/05/1995', visits: 2, created_at: new Date().toISOString() },
-  { id: 'KH003', name: 'Lê Văn C', phone: '0901112223', dob: '20/11/1988', visits: 5, created_at: new Date().toISOString() },
-])
-
+const customers = ref<Customer[]>([])
 const loading = ref(false)
 const isAuthenticated = ref(false)
 const passwordInput = ref('')
 
-const sortOrder = ref<'asc' | 'desc'>('desc') // desc: nhiều nhất, asc: ít nhất
+const sortOrder = ref<'asc' | 'desc'>('desc')
 const searchQuery = ref('')
 const showAddModal = ref(false)
 
@@ -30,6 +26,17 @@ const newCustomer = ref({
   name: '',
   phone: '',
   dob: ''
+})
+
+const fetchCustomers = async () => {
+  loading.value = true
+  const { data } = await supabase.from('customers').select('*').order('created_at', { ascending: false })
+  if (data) customers.value = data
+  loading.value = false
+}
+
+onMounted(() => {
+  fetchCustomers()
 })
 
 const loginAdmin = () => {
@@ -45,7 +52,11 @@ const sortedAndFilteredCustomers = computed(() => {
   
   if (searchQuery.value) {
     const q = searchQuery.value.toLowerCase()
-    result = result.filter(c => c.name.toLowerCase().includes(q) || c.phone.includes(q) || c.id.toLowerCase().includes(q))
+    result = result.filter(c => 
+      c.name.toLowerCase().includes(q) || 
+      (c.phone && c.phone.includes(q)) || 
+      (c.customer_code && c.customer_code.toLowerCase().includes(q))
+    )
   }
   
   return result.sort((a, b) => {
@@ -59,20 +70,25 @@ const addCustomer = async () => {
     return alert('Vui lòng nhập tên và SĐT')
   }
   try {
-    // Mock insert
-    customers.value.push({
-      id: `KH00${customers.value.length + 1}`,
+    const customerCode = `KH${Math.floor(1000 + Math.random() * 9000)}`
+    const { data, error } = await supabase.from('customers').insert([{
+      customer_code: customerCode,
       name: newCustomer.value.name,
       phone: newCustomer.value.phone,
       dob: newCustomer.value.dob,
-      visits: 0,
-      created_at: new Date().toISOString()
-    })
+      visits: 0
+    }]).select()
+    
+    if (error) throw error
+    
+    if (data) {
+      customers.value.unshift(data[0])
+    }
     alert('Đã thêm khách hàng thành công!')
     showAddModal.value = false
     newCustomer.value = { name: '', phone: '', dob: '' }
-  } catch (error) {
-    alert('Lỗi thêm khách hàng')
+  } catch (error: any) {
+    alert('Lỗi thêm khách hàng: ' + error.message)
   }
 }
 
@@ -137,7 +153,7 @@ const toggleSort = () => {
               <td colspan="4" class="text-center py-8 text-gray-400">Không tìm thấy khách hàng nào</td>
             </tr>
             <tr v-for="customer in sortedAndFilteredCustomers" :key="customer.id" class="border-b border-gray-100 hover:bg-gray-50 transition bg-white">
-              <td class="py-4 px-6 text-primary-blue font-semibold">{{ customer.id }}</td>
+              <td class="py-4 px-6 text-primary-blue font-semibold">{{ customer.customer_code }}</td>
               <td class="py-4 px-6">
                 <div class="font-medium text-gray-800">{{ customer.name }}</div>
                 <div class="text-sm text-primary-blue flex items-center gap-1 mt-0.5">
