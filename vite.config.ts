@@ -8,7 +8,7 @@ export default defineConfig({
   base: './',
   plugins: [
     vue(),
-    VitePWA({
+    /* VitePWA({
       registerType: 'autoUpdate',
       injectRegister: 'auto',
       workbox: {
@@ -37,7 +37,7 @@ export default defineConfig({
           }
         ]
       }
-    })
+    }) */
   ],
   resolve: {
     alias: {

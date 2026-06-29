@@ -1,15 +1,15 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { LockClosedIcon, PlusIcon, FunnelIcon } from '@heroicons/vue/24/outline'
+import { LockClosedIcon, PlusIcon, FunnelIcon, StarIcon, CurrencyDollarIcon } from '@heroicons/vue/24/outline'
 import { supabase } from '../lib/supabase'
 
 interface Customer {
   id: string
-  customer_code: string
-  name: string
   phone: string
-  dob: string
-  visits: number
+  full_name: string
+  loyal_points: number
+  customer_class: string
+  total_spent: number
   created_at: string
 }
 
@@ -23,15 +23,24 @@ const searchQuery = ref('')
 const showAddModal = ref(false)
 
 const newCustomer = ref({
-  name: '',
-  phone: '',
-  dob: ''
+  full_name: '',
+  phone: ''
 })
 
 const fetchCustomers = async () => {
   loading.value = true
-  const { data } = await supabase.from('customers').select('*').order('created_at', { ascending: false })
-  if (data) customers.value = data
+  const { data } = await supabase.from('customers').select('*').order('total_spent', { ascending: false })
+  if (data) {
+    // Tự động phân hạng
+    const updatedData = data.map((c: any) => {
+      let tier = 'Standard'
+      if (c.loyal_points >= 500) tier = 'Diamond'
+      else if (c.loyal_points >= 200) tier = 'Gold'
+      else if (c.loyal_points >= 50) tier = 'Silver'
+      return { ...c, customer_class: tier }
+    })
+    customers.value = updatedData
+  }
   loading.value = false
 }
 
@@ -53,30 +62,28 @@ const sortedAndFilteredCustomers = computed(() => {
   if (searchQuery.value) {
     const q = searchQuery.value.toLowerCase()
     result = result.filter(c => 
-      c.name.toLowerCase().includes(q) || 
-      (c.phone && c.phone.includes(q)) || 
-      (c.customer_code && c.customer_code.toLowerCase().includes(q))
+      c.full_name.toLowerCase().includes(q) || 
+      (c.phone && c.phone.includes(q))
     )
   }
   
   return result.sort((a, b) => {
-    if (sortOrder.value === 'desc') return b.visits - a.visits
-    return a.visits - b.visits
+    if (sortOrder.value === 'desc') return b.total_spent - a.total_spent
+    return a.total_spent - b.total_spent
   })
 })
 
 const addCustomer = async () => {
-  if (!newCustomer.value.name || !newCustomer.value.phone) {
+  if (!newCustomer.value.full_name || !newCustomer.value.phone) {
     return alert('Vui lòng nhập tên và SĐT')
   }
   try {
-    const customerCode = `KH${Math.floor(1000 + Math.random() * 9000)}`
     const { data, error } = await supabase.from('customers').insert([{
-      customer_code: customerCode,
-      name: newCustomer.value.name,
+      full_name: newCustomer.value.full_name,
       phone: newCustomer.value.phone,
-      dob: newCustomer.value.dob,
-      visits: 0
+      total_spent: 0,
+      loyal_points: 0,
+      customer_class: 'Standard'
     }]).select()
     
     if (error) throw error
@@ -86,7 +93,7 @@ const addCustomer = async () => {
     }
     alert('Đã thêm khách hàng thành công!')
     showAddModal.value = false
-    newCustomer.value = { name: '', phone: '', dob: '' }
+    newCustomer.value = { full_name: '', phone: '' }
   } catch (error: any) {
     alert('Lỗi thêm khách hàng: ' + error.message)
   }
@@ -95,6 +102,8 @@ const addCustomer = async () => {
 const toggleSort = () => {
   sortOrder.value = sortOrder.value === 'desc' ? 'asc' : 'desc'
 }
+
+const formatCurrency = (val: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val)
 </script>
 
 <template>
@@ -139,34 +148,37 @@ const toggleSort = () => {
         <table class="w-full text-left border-collapse">
           <thead>
             <tr class="border-b border-gray-200 text-sm text-gray-500 bg-white">
-              <th class="py-4 px-6 font-medium">Mã KH</th>
-              <th class="py-4 px-6 font-medium">Họ tên & SĐT</th>
-              <th class="py-4 px-6 font-medium text-center">Số lần đến</th>
-              <th class="py-4 px-6 font-medium text-right">Ngày sinh</th>
+              <th class="py-4 px-6 font-medium">Khách hàng</th>
+              <th class="py-4 px-6 font-medium text-center">Hạng thẻ & Điểm</th>
+              <th class="py-4 px-6 font-medium text-right">Tổng chi tiêu</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="loading" class="border-b border-gray-100">
-              <td colspan="4" class="text-center py-8 text-gray-400">Đang tải dữ liệu...</td>
+              <td colspan="3" class="text-center py-8 text-gray-400">Đang tải dữ liệu...</td>
             </tr>
             <tr v-else-if="sortedAndFilteredCustomers.length === 0" class="border-b border-gray-100">
-              <td colspan="4" class="text-center py-8 text-gray-400">Không tìm thấy khách hàng nào</td>
+              <td colspan="3" class="text-center py-8 text-gray-400">Không tìm thấy khách hàng nào</td>
             </tr>
             <tr v-for="customer in sortedAndFilteredCustomers" :key="customer.id" class="border-b border-gray-100 hover:bg-gray-50 transition bg-white">
-              <td class="py-4 px-6 text-primary-blue font-semibold">{{ customer.customer_code }}</td>
               <td class="py-4 px-6">
-                <div class="font-medium text-gray-800">{{ customer.name }}</div>
-                <div class="text-sm text-primary-blue flex items-center gap-1 mt-0.5">
+                <div class="font-bold text-gray-900">{{ customer.full_name }}</div>
+                <div class="text-sm text-gray-500 flex items-center gap-1 mt-0.5">
                   <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"></path></svg>
                   {{ customer.phone }}
                 </div>
               </td>
               <td class="py-4 px-6 text-center">
-                <span class="inline-block px-3 py-1 bg-green-50 text-success rounded-full font-semibold text-sm">
-                  {{ customer.visits }} lần
-                </span>
+                <div class="flex flex-col items-center gap-1">
+                  <span class="inline-block px-3 py-1 bg-amber-50 text-amber-600 border border-amber-200 rounded-full font-bold text-xs" :class="{ 'bg-blue-50 text-blue-600 border-blue-200': customer.customer_class === 'Diamond', 'bg-gray-100 text-gray-600 border-gray-300': customer.customer_class === 'Standard' }">
+                    {{ customer.customer_class }}
+                  </span>
+                  <span class="text-xs font-semibold text-gray-500">{{ customer.loyal_points }} điểm</span>
+                </div>
               </td>
-              <td class="py-4 px-6 text-right text-gray-500">{{ customer.dob || '-' }}</td>
+              <td class="py-4 px-6 text-right font-bold text-primary-blue">
+                {{ formatCurrency(customer.total_spent) }}
+              </td>
             </tr>
           </tbody>
         </table>
@@ -192,10 +204,6 @@ const toggleSort = () => {
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1">Số điện thoại *</label>
               <input v-model="newCustomer.phone" type="text" required class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-blue/50 focus:bg-white" placeholder="098xxxxxx">
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Ngày sinh</label>
-              <input v-model="newCustomer.dob" type="text" class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-blue/50 focus:bg-white" placeholder="DD/MM/YYYY">
             </div>
             <div class="pt-4 flex justify-end gap-3">
               <button type="button" @click="showAddModal = false" class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium">Hủy</button>

@@ -4,28 +4,43 @@ import { useRouter } from 'vue-router'
 import { Settings } from 'lucide-vue-next'
 import BarberPoleAnimation from '../components/brand/BarberPoleAnimation.vue'
 import BrandLogo from '../components/brand/BrandLogo.vue'
-import { updateApiBaseUrl } from '../api/apiClient'
+import { supabase } from '../lib/supabase'
 
 const router = useRouter()
 const isLoading = ref(false)
-const showSettings = ref(false)
-const serverIp = ref('')
+const email = ref('')
+const password = ref('')
+const errorMessage = ref('')
 
-onMounted(() => {
-  serverIp.value = localStorage.getItem('server_ip') || 'http://localhost:3000'
+onMounted(async () => {
+  // Bỏ qua check login tạm thời nếu đã đăng nhập thì tự chuyển
+  const { data: { session } } = await supabase.auth.getSession()
+  if (session) {
+    router.push('/app/overview')
+  }
 })
 
-const saveServerIp = () => {
-  updateApiBaseUrl(serverIp.value)
-  showSettings.value = false
-  alert('Đã lưu cấu hình máy chủ!')
-}
-
-const handleLogin = () => {
+const handleLogin = async () => {
+  if (!email.value || !password.value) {
+    errorMessage.value = 'Vui lòng nhập email và mật khẩu'
+    return
+  }
+  
   isLoading.value = true
-  setTimeout(() => {
+  errorMessage.value = ''
+  
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: email.value,
+    password: password.value,
+  })
+
+  isLoading.value = false
+
+  if (error) {
+    errorMessage.value = 'Đăng nhập thất bại: ' + error.message
+  } else {
     router.push('/app/overview')
-  }, 800)
+  }
 }
 </script>
 
@@ -62,34 +77,22 @@ const handleLogin = () => {
       </div>
 
       <div class="w-full max-w-md mx-auto bg-surface p-8 sm:p-10 rounded-2xl shadow-sm border border-border relative">
-        <button @click="showSettings = !showSettings" class="absolute top-6 right-6 text-gray-400 hover:text-primary-blue transition-colors">
-          <Settings class="w-5 h-5" />
-        </button>
 
         <h2 class="text-2xl font-bold text-barber-navy mb-2">Đăng nhập</h2>
         <p class="text-gray-500 mb-8 text-sm">Vui lòng đăng nhập để tiếp tục</p>
 
-        <!-- Settings Panel -->
-        <div v-if="showSettings" class="mb-6 p-4 bg-gray-50 rounded-xl border border-gray-200">
-          <label class="block text-sm font-medium text-gray-700 mb-1">Cấu hình IP Máy chủ (Mobile)</label>
-          <div class="flex gap-2">
-            <input 
-              type="text" 
-              v-model="serverIp"
-              placeholder="VD: 192.168.1.100:3000"
-              class="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-primary-blue/20 outline-none"
-            />
-            <button @click="saveServerIp" class="px-4 py-2 bg-gray-800 text-white rounded-lg text-sm font-medium">Lưu</button>
-          </div>
-          <p class="text-xs text-gray-500 mt-2">Dùng cho nhân viên kết nối từ điện thoại qua WiFi quán.</p>
+        <!-- Error Message -->
+        <div v-if="errorMessage" class="mb-6 p-4 bg-red-50 text-red-600 rounded-xl border border-red-200 text-sm">
+          {{ errorMessage }}
         </div>
 
         <form @submit.prevent="handleLogin" class="space-y-5">
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Tên đăng nhập</label>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Email đăng nhập</label>
             <input 
-              type="text" 
-              value="admin"
+              type="email" 
+              v-model="email"
+              placeholder="admin@chilling.com"
               class="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:ring-2 focus:ring-primary-blue/20 focus:border-primary-blue outline-none transition-all bg-gray-50"
             />
           </div>
@@ -98,33 +101,21 @@ const handleLogin = () => {
             <label class="block text-sm font-medium text-gray-700 mb-1">Mật khẩu</label>
             <input 
               type="password" 
-              value="123456"
+              v-model="password"
+              placeholder="••••••••"
               class="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:ring-2 focus:ring-primary-blue/20 focus:border-primary-blue outline-none transition-all bg-gray-50"
             />
-          </div>
-
-          <div class="flex items-center justify-between">
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked class="rounded text-primary-blue focus:ring-primary-blue w-4 h-4" />
-              <span class="text-sm text-gray-600">Ghi nhớ</span>
-            </label>
-            <a href="#" class="text-sm font-medium text-primary-blue hover:text-blue-700">Quên mật khẩu?</a>
           </div>
 
           <button 
             type="submit" 
             :disabled="isLoading"
-            class="w-full py-3 px-4 bg-primary-blue hover:bg-blue-600 text-white rounded-xl font-medium transition-all shadow-sm hover:shadow active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed flex justify-center items-center gap-2"
+            class="w-full py-3 px-4 bg-primary-blue hover:bg-blue-600 text-white rounded-xl font-medium transition-all shadow-sm hover:shadow active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed flex justify-center items-center gap-2 mt-4"
           >
             <span v-if="!isLoading">Đăng nhập ngay</span>
             <span v-else class="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
           </button>
         </form>
-
-        <div class="mt-8 p-4 bg-blue-50/50 rounded-xl border border-blue-100/50 text-center">
-          <p class="text-xs text-gray-500 mb-1">Demo credentials</p>
-          <p class="text-sm font-medium text-barber-navy">admin / 123456</p>
-        </div>
       </div>
     </div>
   </div>

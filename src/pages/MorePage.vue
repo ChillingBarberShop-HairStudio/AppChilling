@@ -20,7 +20,7 @@ const menuItems = [
   { title: 'Khách hàng', icon: User, path: '/app/customers' },
   { title: 'Kho hàng', icon: Package, path: '/app/inventory' },
   { title: 'Nhà cung cấp', icon: Truck, path: '/app/more' },
-  { title: 'Sản phẩm & dịch vụ', icon: BookOpen, path: '/app/more' },
+  { title: 'Sản phẩm & dịch vụ', icon: BookOpen, path: '/app/services' },
   { title: 'Nhân viên', icon: Users, path: '/app/staff' },
   { title: 'Quản lý lương', icon: Banknotes, path: '/app/more' },
   { title: 'Cài đặt', icon: Cog, path: '/app/more' },

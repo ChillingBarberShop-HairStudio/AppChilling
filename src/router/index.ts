@@ -22,7 +22,9 @@ const router = createRouter({
         { path: "more", component: () => import('@/pages/MorePage.vue') },
         { path: "staff", component: () => import('@/pages/StaffManagement.vue') },
         { path: "inventory", component: () => import('@/pages/InventoryManagement.vue') },
-        { path: "customers", component: () => import('@/pages/CustomerManagement.vue') }
+        { path: "customers", component: () => import('@/pages/CustomerManagement.vue') },
+        { path: "services", component: () => import('@/pages/ServiceManagement.vue') },
+        { path: "payment/:id", component: () => import('@/pages/PaymentPage.vue') }
       ]
     }
   ]

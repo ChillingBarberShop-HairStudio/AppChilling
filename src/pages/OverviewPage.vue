@@ -1,107 +1,176 @@
 <script setup lang="ts">
-import { DollarSign, CalendarCheck, FileText, TrendingUp, Plus, Printer, Volume2 } from 'lucide-vue-next'
-import AppCard from '../components/ui/AppCard.vue'
-import KpiCard from '../components/ui/KpiCard.vue'
-import IconTile from '../components/ui/IconTile.vue'
-import BarberPoleAnimation from '../components/brand/BarberPoleAnimation.vue'
-import { mockTimeline } from '../data/mockData'
-import { apiClient } from '../api/apiClient'
 import { ref, onMounted } from 'vue'
+import { ArrowUpRight, Wallet, Users, Clock, Scissors } from 'lucide-vue-next'
+import VChart from 'vue-echarts'
+import { use } from 'echarts/core'
+import { CanvasRenderer } from 'echarts/renderers'
+import { LineChart, BarChart, PieChart } from 'echarts/charts'
+import { GridComponent, TooltipComponent, LegendComponent, TitleComponent } from 'echarts/components'
+import { supabase } from '../lib/supabase'
 
-const kpis = ref({
-  revenueToday: 0,
-  appointmentsToday: 0,
-  newInvoices: 0,
-  paidInvoices: 0,
-  debt: 0,
-  newCustomers: 0,
-})
+use([CanvasRenderer, LineChart, BarChart, PieChart, GridComponent, TooltipComponent, LegendComponent, TitleComponent])
 
-onMounted(async () => {
-  try {
-    const res = await apiClient.get('/kpis')
-    kpis.value = res.data
-  } catch (err) {
-    console.error('Lỗi khi tải KPIs:', err)
+const formatCurrency = (val: number) => new Intl.NumberFormat('vi-VN').format(val)
+
+const isLoading = ref(true)
+
+// KPIs
+const stats = ref([
+  { title: 'Tổng doanh thu', value: '0 đ', change: '+0%', isPositive: true, icon: Wallet, color: 'text-primary-blue', bg: 'bg-blue-50' },
+  { title: 'Tổng đơn hàng', value: '0', change: '+0%', isPositive: true, icon: Scissors, color: 'text-success', bg: 'bg-green-50' },
+  { title: 'Khách hàng mới', value: '0', change: '+0%', isPositive: true, icon: Users, color: 'text-amber-500', bg: 'bg-amber-50' },
+  { title: 'Tổng chi phí', value: '0 đ', change: '0%', isPositive: false, icon: Clock, color: 'text-purple-500', bg: 'bg-purple-50' }
+])
+
+// Chart Options
+const revenueOption = ref({})
+const serviceOption = ref({})
+const staffOption = ref({})
+const customerOption = ref({})
+
+const fetchData = async () => {
+  isLoading.value = true
+
+  // Lấy đơn hàng đã thanh toán
+  const { data: bookings } = await supabase
+    .from('bookings')
+    .select('*, booking_services(*)')
+    .eq('status', 'paid')
+
+  // Lấy chi phí từ giao dịch kho (Giả định giá trị xuất kho - Cần nâng cấp thêm bảng costs thực tế)
+  // Ở đây mock tạm chi phí
+  
+  if (bookings) {
+    let totalRev = 0
+    let totalInvoices = bookings.length
+    
+    // Aggregations
+    const revenueByMonth: Record<string, number> = {}
+    const serviceCounts: Record<string, number> = {}
+    const staffRevenue: Record<string, number> = {}
+    
+    bookings.forEach((b: any) => {
+      totalRev += Number(b.total_amount)
+      
+      const month = new Date(b.created_at).toLocaleString('vi-VN', { month: 'short' })
+      revenueByMonth[month] = (revenueByMonth[month] || 0) + Number(b.total_amount)
+
+      b.booking_services?.forEach((s: any) => {
+        serviceCounts[s.service_name] = (serviceCounts[s.service_name] || 0) + s.quantity
+        staffRevenue[s.staff_name || 'Khác'] = (staffRevenue[s.staff_name || 'Khác'] || 0) + (s.price * s.quantity)
+      })
+    })
+
+    // Update KPIs
+    stats.value[0].value = formatCurrency(totalRev) + ' đ'
+    stats.value[1].value = totalInvoices.toString()
+    
+    // Revenue Chart (6 tháng)
+    const months = Object.keys(revenueByMonth)
+    const revData = Object.values(revenueByMonth)
+    
+    revenueOption.value = {
+      tooltip: { trigger: 'axis', formatter: (p: any) => formatCurrency(p[0].value) + ' đ' },
+      xAxis: { type: 'category', data: months.length ? months : ['Tháng này'], axisLine: { lineStyle: { color: '#E5E7EB' } } },
+      yAxis: { type: 'value', axisLabel: { formatter: (v: number) => (v / 1000000) + 'M' } },
+      series: [{ data: revData.length ? revData : [totalRev], type: 'line', smooth: true, areaStyle: { color: 'rgba(59, 130, 246, 0.1)' }, itemStyle: { color: '#3B82F6' } }]
+    }
+
+    // Top Services
+    const sortedServices = Object.entries(serviceCounts).sort((a, b) => b[1] - a[1]).slice(0, 5)
+    serviceOption.value = {
+      tooltip: { trigger: 'axis' },
+      xAxis: { type: 'value' },
+      yAxis: { type: 'category', data: sortedServices.map(s => s[0]).reverse() },
+      series: [{ type: 'bar', data: sortedServices.map(s => s[1]).reverse(), itemStyle: { color: '#3B82F6', borderRadius: [0, 4, 4, 0] } }]
+    }
+
+    // Staff Performance
+    const staffData = Object.entries(staffRevenue).map(s => ({ name: s[0], value: s[1] }))
+    staffOption.value = {
+      tooltip: { trigger: 'item', formatter: '{b}: {c} đ ({d}%)' },
+      series: [{ type: 'pie', radius: ['40%', '70%'], avoidLabelOverlap: false, itemStyle: { borderRadius: 10, borderColor: '#fff', borderWidth: 2 }, data: staffData.length ? staffData : [{name: 'Chưa có', value: 0}] }]
+    }
   }
+
+  // Khách hàng
+  const { data: customers } = await supabase.from('customers').select('*').order('total_spent', { ascending: false })
+  if (customers) {
+    stats.value[2].value = customers.length.toString()
+
+    const topCustomers = customers.slice(0, 5)
+    customerOption.value = {
+      tooltip: { trigger: 'axis', formatter: (p: any) => formatCurrency(p[0].value) + ' đ' },
+      xAxis: { type: 'category', data: topCustomers.map((c: any) => c.full_name) },
+      yAxis: { type: 'value', axisLabel: { formatter: (v: number) => (v / 1000000) + 'M' } },
+      series: [{ data: topCustomers.map((c: any) => c.total_spent), type: 'bar', itemStyle: { color: '#10B981', borderRadius: [4, 4, 0, 0] } }]
+    }
+  }
+
+  isLoading.value = false
+}
+
+onMounted(() => {
+  fetchData()
 })
+
 </script>
 
 <template>
-  <div class="space-y-6">
+  <div class="space-y-6 pb-24 p-4 max-w-7xl mx-auto">
     <div class="flex items-center justify-between">
       <div>
-        <h1 class="text-2xl font-bold text-barber-navy">Tổng quan hôm nay</h1>
-        <p class="text-sm text-gray-500">Xin chào Admin, chúc một ngày làm việc hiệu quả.</p>
+        <h1 class="text-2xl font-bold text-gray-900">Tổng quan</h1>
+        <p class="text-sm text-gray-500">Phân tích kinh doanh từ dữ liệu hệ thống</p>
       </div>
-      <div class="hidden sm:block">
-        <button class="bg-primary-blue text-white px-4 py-2 rounded-xl font-medium flex items-center gap-2 hover:bg-blue-600 transition-colors shadow-sm">
-          <Plus class="w-4 h-4" /> Tạo hóa đơn
-        </button>
-      </div>
+      <button @click="fetchData" class="px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50 shadow-sm transition-colors">
+        Làm mới
+      </button>
     </div>
 
-    <!-- KPI Grid -->
-    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-      <KpiCard title="Doanh thu" :value="kpis.revenueToday" trend="up" trendValue="+12%" :icon="DollarSign" />
-      <KpiCard title="Lịch hẹn" :value="kpis.appointmentsToday" :icon="CalendarCheck" />
-      <KpiCard title="Hóa đơn mới" :value="kpis.newInvoices" :icon="FileText" />
-      <KpiCard title="Khách mới" :value="kpis.newCustomers" trend="up" trendValue="+2" :icon="TrendingUp" />
-    </div>
-
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <!-- Left Column -->
-      <div class="lg:col-span-2 space-y-6">
-        <!-- Quick Actions -->
-        <AppCard title="Thao tác nhanh">
-          <div class="grid grid-cols-4 gap-4">
-            <IconTile title="Hóa đơn" :icon="Receipt" color="blue" />
-            <IconTile title="Lịch hẹn" :icon="CalendarPlus" color="gold" />
-            <IconTile title="In thử" :icon="Printer" color="gray" />
-            <IconTile title="Test loa" :icon="Volume2" color="red" />
+    <!-- KPIs -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div v-for="stat in stats" :key="stat.title" class="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+        <div class="flex items-center justify-between mb-4">
+          <div :class="[stat.bg, stat.color, 'w-12 h-12 rounded-xl flex items-center justify-center']">
+            <component :is="stat.icon" class="w-6 h-6" />
           </div>
-        </AppCard>
-
-        <!-- Brand Banner -->
-        <div class="relative rounded-2xl overflow-hidden h-40 shadow-sm border border-border group">
-          <img src="/panel.PNG" class="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" alt="Brand Panel" />
-          <div class="absolute inset-0 bg-gradient-to-r from-barber-navy/90 to-transparent"></div>
-          <div class="absolute left-0 top-0 bottom-0 w-2">
-            <BarberPoleAnimation size="hero" />
-          </div>
-          <div class="absolute inset-0 p-6 flex flex-col justify-center text-white">
-            <img src="/Logo.PNG" class="h-8 object-contain object-left mb-2 brightness-0 invert" alt="Logo" />
-            <h3 class="text-xl font-bold">Chilling Studio OS</h3>
-            <p class="text-sm text-gray-300">Hệ thống đang hoạt động ổn định.</p>
+          <div :class="[stat.isPositive ? 'text-success bg-green-50' : 'text-red-500 bg-red-50', 'px-2.5 py-1 rounded-full flex items-center gap-1 text-sm font-semibold']">
+            <ArrowUpRight v-if="stat.isPositive" class="w-4 h-4" />
+            <ArrowUpRight v-else class="w-4 h-4 rotate-180" />
+            {{ stat.change }}
           </div>
         </div>
+        <p class="text-sm font-medium text-gray-500">{{ stat.title }}</p>
+        <p class="text-2xl font-bold text-gray-900 mt-1">{{ stat.value }}</p>
+      </div>
+    </div>
+
+    <div v-if="isLoading" class="py-12 flex justify-center">
+      <div class="w-8 h-8 border-4 border-primary-blue border-t-transparent rounded-full animate-spin"></div>
+    </div>
+
+    <!-- Charts -->
+    <div v-else class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div class="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+        <h3 class="text-lg font-bold text-gray-900 mb-4">Doanh thu 6 tháng</h3>
+        <v-chart class="h-64 w-full" :option="revenueOption" autoresize />
       </div>
 
-      <!-- Right Column -->
-      <div class="space-y-6">
-        <!-- Timeline -->
-        <AppCard title="Hoạt động gần đây">
-          <div class="relative pl-6 space-y-6 before:absolute before:inset-y-2 before:left-2 before:w-px before:bg-gray-200">
-            <div v-for="(item, i) in mockTimeline" :key="i" class="relative">
-              <div class="absolute -left-[29px] w-3 h-3 rounded-full bg-primary-blue border-2 border-white shadow-sm top-1"></div>
-              <div class="text-xs font-semibold text-primary-blue mb-0.5">{{ item.time }}</div>
-              <div class="text-sm text-gray-700">{{ item.text }}</div>
-            </div>
-          </div>
-          <button class="w-full mt-6 py-2 text-sm font-medium text-primary-blue hover:bg-blue-50 rounded-lg transition-colors">
-            Xem tất cả
-          </button>
-        </AppCard>
+      <div class="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+        <h3 class="text-lg font-bold text-gray-900 mb-4">Hiệu suất nhân viên</h3>
+        <v-chart class="h-64 w-full" :option="staffOption" autoresize />
+      </div>
+
+      <div class="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+        <h3 class="text-lg font-bold text-gray-900 mb-4">Dịch vụ bán chạy</h3>
+        <v-chart class="h-64 w-full" :option="serviceOption" autoresize />
+      </div>
+
+      <div class="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+        <h3 class="text-lg font-bold text-gray-900 mb-4">Top khách hàng VIP</h3>
+        <v-chart class="h-64 w-full" :option="customerOption" autoresize />
       </div>
     </div>
   </div>
 </template>
-
-<script lang="ts">
-import { Receipt, CalendarPlus } from 'lucide-vue-next'
-export default {
-  components: {
-    Receipt, CalendarPlus
-  }
-}
-</script>
